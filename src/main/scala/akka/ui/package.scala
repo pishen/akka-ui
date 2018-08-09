@@ -1,10 +1,12 @@
 package akka
 
+import akka.actor.ActorSystem
 import akka.stream._
 import akka.stream.scaladsl._
 import org.scalajs.dom.raw._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.scalajs.js
+import scala.reflect.ClassTag
 
 package object ui {
   implicit class SourceBuilder[T <: EventTarget](t: T) {
@@ -32,25 +34,16 @@ package object ui {
   }
 
   implicit class SinkBuilder[E <: Element](e: E) {
-    def sink[V](selector: E => V => Unit)(
-      implicit materializer: Materializer
+    def sink[V: ClassTag](selector: E => V => Unit)(
+      implicit system: ActorSystem,
+      materializer: Materializer
     ): Sink[V, akka.NotUsed] = {
-      val (queue, sink) = Sink.queue[V]().preMaterialize
-
       val setter = selector(e)
+      val elementWriter = system.actorOf(ElementWriter.props(setter))
 
-      def pull(): Unit = {
-        queue.pull.foreach {
-          case Some(v) =>
-            setter(v)
-            pull()
-          case None =>
-            // stream is completed
-        }
-      }
-      //TODO: cancel the Sink when element removed
+      //TODO: kill elementWriter when element removed
 
-      sink
+      Sink.actorRef[V](elementWriter, ElementWriter.Completed)
     }
   }
 }
