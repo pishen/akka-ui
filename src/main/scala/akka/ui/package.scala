@@ -1,10 +1,9 @@
 package akka
 
-import akka.actor.ActorSystem
+import akka.actor._
 import akka.stream._
 import akka.stream.scaladsl._
 import org.scalajs.dom.raw._
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.scalajs.js
 import scala.reflect.ClassTag
 
@@ -39,11 +38,16 @@ package object ui {
       materializer: Materializer
     ): Sink[V, akka.NotUsed] = {
       val setter = selector(e)
-      val elementWriter = system.actorOf(ElementWriter.props(setter))
+      val propertyWriter = system.actorOf(PropertyWriter.props(setter))
 
-      //TODO: kill elementWriter when element removed
+      // Kill propertyWriter when element removed
+      e.classList.add("akka-ui-binded")
+      e.addEventListener(
+        "akka-ui-removed",
+        (e: Event) => propertyWriter ! PoisonPill
+      )
 
-      Sink.actorRef[V](elementWriter, ElementWriter.Completed)
+      Sink.actorRef[V](propertyWriter, PropertyWriter.Completed)
     }
   }
 }
