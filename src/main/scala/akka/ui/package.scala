@@ -46,7 +46,7 @@ package object ui {
     }
 
     def childrenSink(
-      implicit system: ActorSystem
+        implicit system: ActorSystem
     ): Sink[Seq[Node], NotUsed] = {
       val childrenWriter = system.actorOf(ChildrenWriter.props(n))
 
@@ -55,7 +55,8 @@ package object ui {
         .+=(childrenWriter)
 
       import ChildrenWriter._
-      Sink.actorRef[ReplaceAll](childrenWriter, Completed)
+      Sink
+        .actorRef[ReplaceAll](childrenWriter, Completed)
         .contramap[Seq[Node]](seq => ReplaceAll(seq))
     }
   }

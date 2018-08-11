@@ -13,10 +13,12 @@ class ChildrenWriter(n: Node) extends Actor {
         .dropRight(children.size)
         .foreach { child =>
           // remove the bindings
-          sourceBindings.get(child)
+          sourceBindings
+            .get(child)
             .foreach(actors => actors.foreach(_ ! PoisonPill))
           sourceBindings -= child
-          sinkBindings.get(child)
+          sinkBindings
+            .get(child)
             .foreach(actors => actors.foreach(_ ! PoisonPill))
           sinkBindings -= child
           // remove the node
