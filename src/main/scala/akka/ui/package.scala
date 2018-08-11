@@ -14,7 +14,7 @@ package object ui {
   implicit class SourceBuilder[T <: EventTarget](t: T) {
     def source[E <: Event](selector: T => js.Function1[E, _] => Unit)(
         implicit materializer: Materializer
-    ): Source[E, akka.NotUsed] = {
+    ): Source[E, NotUsed] = {
       val (eventReader, source) = Source
         .actorRef[E](10, OverflowStrategy.dropNew)
         .preMaterialize
@@ -29,20 +29,34 @@ package object ui {
     }
   }
 
-  val sinkBindings = mutable.Map.empty[Element, mutable.Set[ActorRef]]
+  val sinkBindings = mutable.Map.empty[Node, mutable.Set[ActorRef]]
 
-  implicit class SinkBuilder[E <: Element](e: E) {
-    def sink[V: ClassTag](selector: E => V => Unit)(
+  implicit class SinkBuilder[N <: Node](n: N) {
+    def sink[V: ClassTag](selector: N => V => Unit)(
         implicit system: ActorSystem
     ): Sink[V, akka.NotUsed] = {
-      val setter = selector(e)
+      val setter = selector(n)
       val propertyWriter = system.actorOf(PropertyWriter.props(setter))
 
       sinkBindings
-        .getOrElseUpdate(e, mutable.Set.empty[ActorRef])
+        .getOrElseUpdate(n, mutable.Set.empty[ActorRef])
         .+=(propertyWriter)
 
       Sink.actorRef[V](propertyWriter, PropertyWriter.Completed)
+    }
+
+    def childrenSink(
+      implicit system: ActorSystem
+    ): Sink[Seq[Node], NotUsed] = {
+      val childrenWriter = system.actorOf(ChildrenWriter.props(n))
+
+      sinkBindings
+        .getOrElseUpdate(n, mutable.Set.empty[ActorRef])
+        .+=(childrenWriter)
+
+      import ChildrenWriter._
+      Sink.actorRef[ReplaceAll](childrenWriter, Completed)
+        .contramap[Seq[Node]](seq => ReplaceAll(seq))
     }
   }
 }
