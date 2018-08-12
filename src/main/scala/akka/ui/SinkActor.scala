@@ -3,16 +3,18 @@ package akka.ui
 import akka.actor.Actor
 import akka.actor.Props
 import scala.reflect.ClassTag
-import PropertyWriter._
+import SinkActor._
 
-class PropertyWriter[V: ClassTag](setter: V => Unit) extends Actor {
+class SinkActor[V: ClassTag](setter: V => Unit) extends Actor {
   def receive = {
     case v: V      => setter(v)
     case Completed => // do nothing
   }
 }
 
-object PropertyWriter {
+object SinkActor {
   case object Completed
-  def props[V: ClassTag](setter: V => Unit) = Props(new PropertyWriter(setter))
+  def props[V: ClassTag](setter: V => Unit) = {
+    Props(new SinkActor(setter))
+  }
 }
