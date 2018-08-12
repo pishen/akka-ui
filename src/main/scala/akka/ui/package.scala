@@ -38,7 +38,7 @@ package object ui {
   implicit class SinkBuilder[T <: Element](t: T) {
     def sink[V: ClassTag](selector: T => V => Unit)(
         implicit system: ActorSystem
-    ): Sink[V, akka.NotUsed] = {
+    ): Sink[V, NotUsed] = {
       val setter = selector(t)
       val sinkActor = system.actorOf(SinkActor.props(setter))
 

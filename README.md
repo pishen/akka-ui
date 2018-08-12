@@ -6,7 +6,7 @@ Build your reactive UI using [Akka.js](https://github.com/akka-js/akka.js)
 implicit val system = ActorSystem("AkkaUI")
 implicit val materializer = ActorMaterializer()
 
-val textBox = input().render
+val textBox = input(placeholder := "Name").render
 val name = span().render
 
 val source: Source[Event, NotUsed] = textBox.source(_.oninput_=)
