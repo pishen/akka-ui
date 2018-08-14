@@ -24,7 +24,7 @@ val root = div(
 document.querySelector("#root").appendChild(root.render)
 ```
 
-## Installation
+### Installation
 
 ``` scala
 libraryDependencies += "net.pishen" %%% "akka-ui" % "0.1.0"
@@ -32,7 +32,7 @@ libraryDependencies += "net.pishen" %%% "akka-ui" % "0.1.0"
 
 AkkaUI is built on top of [Scala.js](https://www.scala-js.org/), [Akka.js](https://github.com/akka-js/akka.js), and [scala-js-dom](https://github.com/scala-js/scala-js-dom).
 
-## Usage
+### Akka Environment
 
 Since AkkaUI uses Akka Streams underneath, we have to provide an Akka environment for it:
 
@@ -64,9 +64,20 @@ After getting the `HTMLButtonElement`, we can build a `Source` from it using `.s
 
 Notice that you can only call `.source()` **once for each listener**. If you call `.source(_.onclick_=)` more than one time on the same element, the old listener will be overwritten by the new one and the old `Source` will not function properly. Instead, feel free to reuse (materialize) the same `Source` multiple times or pass it to other functions.
 
+``` scala
+// Don't do this
+btn.source(_.onclick_=).runForeach(_ => println("Stream 1 is clicked!"))
+btn.source(_.onclick_=).runForeach(_ => println("Stream 2 is clicked!"))
+
+// Instead, do this
+val source = btn.source(_.onclick_=)
+source.runForeach(_ => println("Stream 1 is clicked!"))
+source.runForeach(_ => println("Stream 2 is clicked!"))
+```
+
 ### Creating Sinks
 
-Similar to what you saw in previous section, AkkaUI also supports creating a `Sink` from an `Element`:
+Similar to what you saw in previous section, AkkaUI also supports creating a `Sink` from `Element`:
 
 ``` scala
 import akka.ui._
@@ -97,10 +108,52 @@ val sink: Sink[String, NotUsed] = span.sink(_.style.backgroundColor_=)
 val sink: Sink[Seq[Element], NotUsed] = div.childrenSink
 ```
 
-* ClassList
+* Class
 
 ``` scala
 val sink: Sink[Seq[String], NotUsed] = div.classSink
 ```
 
-Unlike the situation in previous section, you can create any number of `Sink` on the same property here. But it's recommended to also reuse the `Sink` here, since each call to `.sink()` will create an Actor and take up some space in your program.
+Unlike the situation in previous section, you can create any number of `Sink` on the same property here. But it's recommended to also reuse the `Sink` instance here, since each call to `.sink()` will create an Actor and take up some space in your program.
+
+Here is a simple example which mixes three kinds of Sinks:
+
+``` scala
+import akka.ui._
+import org.scalajs.dom.ext._
+
+def todoItem(content: String) = {
+  val checkbox = input(`type` := "checkbox").render
+  val status = span(cls := "font-weight-bold").render
+
+  val clsSink = status.classSink.contramap[String] { stat =>
+    if (stat == "TODO") {
+      status.classList.filterNot(_ == "text-success") :+ "text-primary"
+    } else {
+      status.classList.filterNot(_ == "text-primary") :+ "text-success"
+    }
+  }
+  val txtSink = status.sink(_.textContent_=)
+
+  checkbox.source(_.onchange_=)
+    .scan("TODO")((old, event) => if (old == "TODO") "DONE" else "TODO")
+    .alsoTo(clsSink)
+    .to(txtSink)
+    .run()
+
+  div(checkbox, " ", status, " ", content).render
+}
+
+val content = input().render
+val btn = button("Add").render
+val todoList = div().render
+
+btn.source(_.onclick_=)
+  .map(_ => todoList.children :+ todoItem(content.value))
+  .runWith(todoList.childrenSink)
+
+val root = div(content, btn, todoList)
+document.querySelector("#root").appendChild(root.render)
+```
+
+Notice that when we import `org.scalajs.dom.ext._` and `akka.ui._`, we will be able to operate `Element.children` and `Element.classList` like an immutable `Seq`, thanks to implicit classes.
