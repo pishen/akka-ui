@@ -32,7 +32,7 @@ libraryDependencies += "net.pishen" %%% "akka-ui" % "0.1.0"
 
 AkkaUI is built on top of [Scala.js](https://www.scala-js.org/), [Akka.js](https://github.com/akka-js/akka.js), and [scala-js-dom](https://github.com/scala-js/scala-js-dom).
 
-### Akka Environment
+### Setup Akka
 
 Since AkkaUI uses Akka Streams underneath, we have to provide an Akka environment for it:
 
@@ -62,7 +62,7 @@ Here we use [Scalatags](https://github.com/lihaoyi/scalatags) to generate a `HTM
 
 After getting the `HTMLButtonElement`, we can build a `Source` from it using `.source()`. (If you are not familiar with `Source`, you may check the [document](https://akka.io/docs/) of Akka Streams). The `.source()` function will expect you to return a listener setter to it. Since `onclick` is a `var` in `HTMLButtonElement`, we can use `onclick_=` to refer the [setter function](https://www.artima.com/pins1ed/stateful-objects.html#18.2).
 
-Notice that you can only call `.source()` **once for each listener**. If you call `.source(_.onclick_=)` more than one time on the same element, the old listener will be overwritten by the new one and the old `Source` will not function properly. Instead, feel free to reuse (materialize) the same `Source` multiple times or pass it to other functions.
+Note that you can only call `.source()` **once for each listener**. If you call `.source(_.onclick_=)` more than one time on the same element, the old listener will be overwritten by the new one and the old `Source` will not function properly. Instead, feel free to reuse (materialize) the same `Source` multiple times or pass it to other functions.
 
 ``` scala
 // Don't do this
@@ -156,4 +156,12 @@ val root = div(content, btn, todoList)
 document.querySelector("#root").appendChild(root.render)
 ```
 
-Notice that when we import `org.scalajs.dom.ext._` and `akka.ui._`, we will be able to operate `Element.children` and `Element.classList` like an immutable `Seq`, thanks to implicit classes.
+Note that when we import `org.scalajs.dom.ext._` and `akka.ui._`, we will be able to operate `Element.children` and `Element.classList` like an immutable `Seq`, thanks to implicit classes.
+
+If you want to keep some states in your stream, try using the `scan()` function from Akka Streams like above.
+
+### Prevent Memory Leak
+
+Each time you materialize a stream (with `run`, `runForeach`, or `runWith`), there will be several actors created underneath to handle the stream messages. These actors will not be terminated until the stream is completed from the `Source` or canceled from the `Sink`. Furthermore, if you materialize a stream using `Source.actorRef()` or `Sink.actorRef()`, the `Source` and `Sink` actors will keep listening for new message and will never complete. Hence, it's the users' responsibility to terminate the streams by themselves. (By sending a `PoisonPill` to the `Source` or `Sink` actors for example.)
+
+In AkkaUI, when you create a `Source` or `Sink` from an `Element`, we will keep a binding information in the internal hashmap. When the `Element` is going to be removed from the DOM by `childrenSink`, all the `Source` and `Sink` related to this `Element` will be completed or canceled, hence prevent the stream from leaking memory. (These streams will not be terminated if you are removing the DOM element by yourself, so make sure you use `childrenSink` to do the modification.)
