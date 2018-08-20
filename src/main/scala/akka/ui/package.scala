@@ -3,6 +3,7 @@ package akka
 import akka.actor._
 import akka.stream._
 import akka.stream.scaladsl._
+import org.scalajs.dom.document
 import org.scalajs.dom.ext._
 import org.scalajs.dom.raw._
 import scala.scalajs.js
@@ -14,6 +15,34 @@ package object ui {
       extends EasySeq[String](tokens.length, tokens.apply)
 
   val sourceBindings = mutable.Map.empty[EventTarget, mutable.Set[ActorRef]]
+  val sinkBindings = mutable.Map.empty[Node, mutable.Set[ActorRef]]
+
+  val observer = new MutationObserver((mutations, observer) =>
+    mutations.foreach { mutation =>
+      mutation.removedNodes.foreach { node =>
+        println("removed!")
+        sourceBindings
+          .get(node)
+          .foreach { actors =>
+            println("remove source actors")
+            actors.foreach(_ ! PoisonPill)
+          }
+        sourceBindings -= node
+        sinkBindings
+          .get(node)
+          .foreach { actors =>
+            println("remove sink actors")
+            actors.foreach(_ ! PoisonPill)
+          }
+        sinkBindings -= node
+      }
+    }
+  )
+
+  observer.observe(
+    document.querySelector("body"),
+    MutationObserverInit(childList = true, subtree = true)
+  )
 
   implicit class SourceBuilder[T <: EventTarget](t: T) {
     def source[E <: Event](selector: T => js.Function1[E, _] => Unit)(
@@ -32,8 +61,6 @@ package object ui {
       source
     }
   }
-
-  val sinkBindings = mutable.Map.empty[Node, mutable.Set[ActorRef]]
 
   implicit class SinkBuilder[T <: Element](t: T) {
     def sink[V: ClassTag](selector: T => V => Unit)(
@@ -56,19 +83,7 @@ package object ui {
         children.foreach(child => t.appendChild(child))
         t.childNodes
           .dropRight(children.size)
-          .foreach { child =>
-            // remove the bindings
-            sourceBindings
-              .get(child)
-              .foreach(actors => actors.foreach(_ ! PoisonPill))
-            sourceBindings -= child
-            sinkBindings
-              .get(child)
-              .foreach(actors => actors.foreach(_ ! PoisonPill))
-            sinkBindings -= child
-            // remove the node
-            t.removeChild(child)
-          }
+          .foreach(t removeChild _)
       }
       val sinkActor = system.actorOf(props)
 
