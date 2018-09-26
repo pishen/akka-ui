@@ -27,7 +27,7 @@ document.querySelector("#root").appendChild(root.render)
 ### Installation
 
 ``` scala
-libraryDependencies += "net.pishen" %%% "akka-ui" % "0.1.1"
+libraryDependencies += "net.pishen" %%% "akka-ui" % "0.2.0"
 ```
 
 AkkaUI is built on top of [Scala.js](https://www.scala-js.org/), [Akka.js](https://github.com/akka-js/akka.js), and [scala-js-dom](https://github.com/scala-js/scala-js-dom).
@@ -74,6 +74,9 @@ val source = btn.source(_.onclick_=)
 source.runForeach(_ => println("Stream 1 is clicked!"))
 source.runForeach(_ => println("Stream 2 is clicked!"))
 ```
+
+#### Calling `preventDefault()`
+When creating the `Source`, one can add a parameter `.source(_.onclick_=, preventDefault = true)` to call `preventDefault()` on the source `Event`.
 
 ### Creating Sinks
 
