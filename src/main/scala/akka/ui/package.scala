@@ -16,14 +16,22 @@ package object ui {
   val sourceBindings = mutable.Map.empty[EventTarget, mutable.Set[ActorRef]]
 
   implicit class SourceBuilder[T <: EventTarget](t: T) {
-    def source[E <: Event](selector: T => js.Function1[E, _] => Unit)(
+    def source[E <: Event](
+        selector: T => js.Function1[E, _] => Unit,
+        preventDefault: Boolean = false
+    )(
         implicit materializer: Materializer
     ): Source[E, NotUsed] = {
       val (eventReader, source) = Source
         .actorRef[E](10, OverflowStrategy.dropNew)
         .preMaterialize
 
-      selector(t)(e => eventReader ! e)
+      selector(t) { event =>
+        if (preventDefault) {
+          event.preventDefault()
+        }
+        eventReader ! event
+      }
 
       t match {
         case e: Element => e.classList.add("akka-ui-binded")
