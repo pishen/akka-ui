@@ -8,6 +8,7 @@ import org.scalajs.dom.raw._
 import scala.scalajs.js
 import scala.reflect.ClassTag
 import scala.collection.mutable
+import scala.language.higherKinds
 
 package object ui {
   implicit class RichDOMTokenList(tokens: DOMTokenList)
@@ -121,6 +122,42 @@ package object ui {
         .+=(sinkActor)
 
       Sink.actorRef[Seq[String]](sinkActor, SinkActor.Completed)
+    }
+  }
+
+  implicit class ZipLatest[O, M, F[O, M] <: FlowOpsMat[O, M]](
+      val flow: F[O, M]
+  ) {
+    def zipLatest[U](src: Source[U, _]) = {
+      flow
+        .map[Either[O, U]](Left(_))
+        .merge(src.map(Right(_)))
+        .scan((Option.empty[O], Option.empty[U])) {
+          case ((left, right), either) =>
+            either match {
+              case Left(v)  => (Some(v), right)
+              case Right(v) => (left, Some(v))
+            }
+        }
+        .collect {
+          case (Some(v1), Some(v2)) => (v1, v2)
+        }
+    }
+
+    def zipLatestMat[U, M2, M3](src: Source[U, M2])(matF: (M, M2) => M3) = {
+      flow
+        .map[Either[O, U]](Left(_))
+        .mergeMat(src.map(Right(_)))(matF)
+        .scan((Option.empty[O], Option.empty[U])) {
+          case ((left, right), either) =>
+            either match {
+              case Left(v)  => (Some(v), right)
+              case Right(v) => (left, Some(v))
+            }
+        }
+        .collect {
+          case (Some(v1), Some(v2)) => (v1, v2)
+        }
     }
   }
 }
