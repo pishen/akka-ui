@@ -27,7 +27,7 @@ document.querySelector("#root").appendChild(root.render)
 ### Installation
 
 ``` scala
-libraryDependencies += "net.pishen" %%% "akka-ui" % "0.2.0"
+libraryDependencies += "net.pishen" %%% "akka-ui" % "0.3.0"
 ```
 
 AkkaUI is built on top of [Scala.js](https://www.scala-js.org/), [Akka.js](https://github.com/akka-js/akka.js), and [scala-js-dom](https://github.com/scala-js/scala-js-dom).
@@ -77,6 +77,25 @@ source.runForeach(_ => println("Stream 2 is clicked!"))
 
 #### Calling `preventDefault()`
 When creating the `Source`, one can add a parameter `.source(_.onclick_=, preventDefault = true)` to call `preventDefault()` on the source `Event`.
+
+#### Zipping Multiple Sources
+Beyond Akka's default `zip` operation, we provide a custom operation called `zipLatest` (and `zipLatestMat`), which has the similar behavior as [CombineLatest](http://reactivex.io/documentation/operators/combinelatest.html) in ReactiveX. The zipped `Source` will emit a tuple when one of its inputs has new element available. (Note that both inputs have to provide at least one element for the zipped `Source` to start emitting.) This function is helpful when you have a flow that depends on multiple input sources at the same time:
+
+``` scala
+val firstName = input(placeholder := "First Name").render
+val lastName = input(placeholder := "Last Name").render
+
+val greeting = span().render
+
+val srcF = firstName.source(_.oninput_=).map(_ => firstName.value)
+val srcL = lastName.source(_.oninput_=).map(_ => lastName.value)
+
+srcF.zipLatest(srcL)
+  .map { case (firstName, lastName) =>
+    s"Hello, $firstName $lastName. Welcome to AkkaUI."
+  }
+  .runWith(greeting.sink(_.textContent_=))
+```
 
 ### Creating Sinks
 
