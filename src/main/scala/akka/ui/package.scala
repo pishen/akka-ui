@@ -123,6 +123,20 @@ package object ui {
 
       Sink.actorRef[Seq[String]](sinkActor, SinkActor.Completed)
     }
+
+    def dummySink[V: ClassTag](
+        implicit system: ActorSystem
+    ): Sink[V, NotUsed] = {
+      val sinkActor = system.actorOf(SinkActor.props[V](_ => {}))
+
+      t.classList.add("akka-ui-binded")
+
+      sinkBindings
+        .getOrElseUpdate(t, mutable.Set.empty[ActorRef])
+        .+=(sinkActor)
+
+      Sink.actorRef[V](sinkActor, SinkActor.Completed)
+    }
   }
 
   implicit class ZipLatest[O, M, F[O, M] <: FlowOpsMat[O, M]](
