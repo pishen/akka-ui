@@ -27,7 +27,7 @@ document.querySelector("#root").appendChild(root.render)
 ### Installation
 
 ``` scala
-libraryDependencies += "net.pishen" %%% "akka-ui" % "0.3.0"
+libraryDependencies += "net.pishen" %%% "akka-ui" % "0.4.0"
 ```
 
 AkkaUI is built on top of [Scala.js](https://www.scala-js.org/), [Akka.js](https://github.com/akka-js/akka.js), and [scala-js-dom](https://github.com/scala-js/scala-js-dom).
@@ -187,3 +187,56 @@ If you want to keep some states in your stream, try using the `scan()` function 
 Each time you materialize a stream (with `run`, `runForeach`, or `runWith`), there will be several actors created underneath to handle the stream messages. These actors will not be terminated until the stream is completed from the `Source` or canceled from the `Sink`. Furthermore, if you materialize a stream using `Source.actorRef()` or `Sink.actorRef()`, the `Source` and `Sink` actors will keep listening for new message and will never complete. Hence, it's the users' responsibility to terminate the streams by themselves. (By sending a `PoisonPill` to the `Source` or `Sink` actors for example.)
 
 In AkkaUI, when you create a `Source` or `Sink` from an `Element`, we will keep a binding information in the internal hashmap. When the `Element` is going to be removed from the DOM by `childrenSink`, all the `Source` and `Sink` related to this `Element` will be completed or canceled, hence prevent the stream from leaking memory. (These streams will not be terminated if you are removing the DOM element by yourself, so make sure you use `childrenSink` to do the modification.)
+
+### Dynamic Stream Handling
+
+In some use cases, we may have to reference back to a `Source` that's not yet materialized, or merge more `Source` into an already materialized stream. In these cases, one can use Akka's `MergeHub` to achieve the task. Following is another Todo-list example which add a "Remove" button after each Todo item, and cycle the "Remove" signal back to list's source:
+
+``` scala
+val contentInput = input().render
+val addBtn = button("Add").render
+val todoList = div().render
+
+val (removeSink, removeSource) = MergeHub.source[String]
+  .map("remove" -> _)
+  .alsoTo(todoList.dummySink) // prevent memory leak
+  .preMaterialize // get the removeSink for later use
+
+def todoItem(content: String) = {
+  val checkbox = input(`type` := "checkbox").render
+  val contentSpan = span(content).render
+  val removeBtn = button("Remove").render
+
+  checkbox.source(_.onchange_=)
+    .scan(false)((done, _) => !done)
+    .runWith(
+      contentSpan.sink(_.style.textDecoration_=).contramap(
+        done => if (done) "line-through" else "none"
+      )
+    )
+
+  // connect removeBtn to removeSink
+  removeBtn.source(_.onclick_=).map(_ => content).runWith(removeSink)
+
+  div(checkbox, " ", contentSpan, " ", removeBtn).render
+}
+
+addBtn.source(_.onclick_=)
+  .map(_ => "add" -> contentInput.value)
+  .merge(removeSource)
+  .scan(Map.empty[String, HTMLDivElement]) {
+    case (map, ("add", content)) =>
+      map + (content -> todoItem(content))
+    case (map, ("remove", content)) =>
+      map - content
+  }
+  .map(_.values.toSeq)
+  .runWith(todoList.childrenSink)
+
+val root = div(contentInput, addBtn, todoList)
+document.querySelector("#root").appendChild(root.render)
+```
+
+Starting from a source that will merge the "add" and "remove" signal, we eventually convert each signal into several Todo items, where each Todo item will contain a Remove button which sends its "remove" signal (onclick) back to the starting source. To achieve this, we use `MergeHub` and `preMaterialize` to get the `Sink` that can consume signals from the Remove button(s).
+
+Notice that when we call `preMaterialize`, an unhandled stream will be created, which we have to terminate by ourselves to prevent memory leak. Here we use a trick that add one more `Sink` to the `Source` before we `preMaterialize` it, which is the `dummySink` on `todoList`, this `Sink` will consume and ignore all the signals sending to it, and will cancel the stream when its binding DOM element is removed. When the stream is canceled, the preMaterialized `MergeHub` will be terminated as well, hence preventing the memory leak. We can use this technique to connect the unhandled materialzed stream to a DOM element which has the same life-cycle as the stream.
