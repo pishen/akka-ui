@@ -27,7 +27,7 @@ document.querySelector("#root").appendChild(root.render)
 ### Installation
 
 ``` scala
-libraryDependencies += "net.pishen" %%% "akka-ui" % "0.4.0"
+libraryDependencies += "net.pishen" %%% "akka-ui" % "0.4.1"
 ```
 
 AkkaUI is built on top of [Scala.js](https://www.scala-js.org/), [Akka.js](https://github.com/akka-js/akka.js), and [scala-js-dom](https://github.com/scala-js/scala-js-dom).
