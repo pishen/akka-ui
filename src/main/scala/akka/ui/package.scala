@@ -6,15 +6,15 @@ import akka.stream.scaladsl._
 import org.scalajs.dom.ext._
 import org.scalajs.dom.raw._
 import scala.scalajs.js
-import scala.reflect.ClassTag
 import scala.collection.mutable
-import scala.language.higherKinds
+import scala.concurrent.ExecutionContext.Implicits.global
 
 package object ui {
   implicit class RichDOMTokenList(tokens: DOMTokenList)
       extends EasySeq[String](tokens.length, tokens.apply)
 
-  val sourceBindings = mutable.Map.empty[EventTarget, mutable.Set[ActorRef]]
+  val sourceBindings = mutable.Map
+    .empty[EventTarget, mutable.Set[SourceQueueWithComplete[_ <: Event]]]
 
   implicit class SourceBuilder[T <: EventTarget](t: T) {
     def source[E <: Event](
@@ -23,119 +23,171 @@ package object ui {
     )(
         implicit materializer: Materializer
     ): Source[E, NotUsed] = {
-      val (eventReader, source) = Source
-        .actorRef[E](10, OverflowStrategy.dropNew)
-        .preMaterialize
+      val (eventQueue, source) = Source
+        .queue[E](10, OverflowStrategy.dropNew)
+        .toMat(BroadcastHub.sink)(Keep.both)
+        .run()
 
       selector(t) { event =>
         if (preventDefault) {
           event.preventDefault()
         }
-        eventReader ! event
+        eventQueue.offer(event)
       }
 
       t match {
         case e: Element => e.classList.add("akka-ui-binded")
-        case _          => //do nothing
+        case _ => //do nothing
       }
 
       sourceBindings
-        .getOrElseUpdate(t, mutable.Set.empty[ActorRef])
-        .+=(eventReader)
+        .getOrElseUpdate(t, mutable.Set.empty)
+        .+=(eventQueue)
 
       source
     }
   }
 
-  val sinkBindings = mutable.Map.empty[Node, mutable.Set[ActorRef]]
+  val sinkBindings =
+    mutable.Map.empty[Node, mutable.Set[SinkQueueWithCancel[_]]]
 
   implicit class SinkBuilder[T <: Element](t: T) {
-    def sink[V: ClassTag](selector: T => V => Unit)(
-        implicit system: ActorSystem
+    def sink[V](selector: T => V => Unit)(
+        implicit materializer: Materializer
     ): Sink[V, NotUsed] = {
       val setter = selector(t)
-      val sinkActor = system.actorOf(SinkActor.props(setter))
+      val (sink, queue) = MergeHub
+        .source[V]
+        .toMat(Sink.queue[V])(Keep.both)
+        .run()
+
+      def pull(): Unit = {
+        queue.pull().foreach {
+          case Some(v) =>
+            setter(v)
+            pull()
+          case None =>
+            println("You should not come here.")
+        }
+      }
+      pull()
 
       t.classList.add("akka-ui-binded")
 
       sinkBindings
-        .getOrElseUpdate(t, mutable.Set.empty[ActorRef])
-        .+=(sinkActor)
+        .getOrElseUpdate(t, mutable.Set.empty)
+        .+=(queue)
 
-      Sink.actorRef[V](sinkActor, SinkActor.Completed)
+      sink
     }
 
     def childrenSink(
-        implicit system: ActorSystem
+        implicit materializer: Materializer
     ): Sink[Seq[Element], NotUsed] = {
-      val props = SinkActor.props[Seq[Element]] { children =>
-        children.foreach(child => t.appendChild(child))
-        t.children
-          .dropRight(children.size)
-          .foreach { child =>
-            // remove the bindings
-            (child +: child.querySelectorAll(".akka-ui-binded"))
-              .foreach { node =>
-                sourceBindings
-                  .get(node)
-                  .foreach { actors =>
-                    actors.foreach(_ ! PoisonPill)
+      val (sink, queue) = MergeHub
+        .source[Seq[Element]]
+        .toMat(Sink.queue[Seq[Element]])(Keep.both)
+        .run()
+
+      def pull(): Unit = {
+        queue.pull().foreach {
+          case Some(children) =>
+            children.foreach(child => t.appendChild(child))
+            t.children
+              .dropRight(children.size)
+              .foreach { child =>
+                // remove the bindings
+                (child +: child.querySelectorAll(".akka-ui-binded"))
+                  .foreach { node =>
+                    sourceBindings
+                      .get(node)
+                      .foreach { queues =>
+                        queues.foreach(_.complete())
+                      }
+                    sourceBindings -= node
+                    sinkBindings
+                      .get(node)
+                      .foreach { queues =>
+                        queues.foreach(_.cancel())
+                      }
+                    sinkBindings -= node
                   }
-                sourceBindings -= node
-                sinkBindings
-                  .get(node)
-                  .foreach { actors =>
-                    actors.foreach(_ ! PoisonPill)
-                  }
-                sinkBindings -= node
+                // remove the child
+                t.removeChild(child)
               }
-            // remove the child
-            t.removeChild(child)
-          }
+            pull()
+          case None =>
+            println("You should not come here.")
+        }
       }
-      val sinkActor = system.actorOf(props)
+      pull()
 
       t.classList.add("akka-ui-binded")
 
       sinkBindings
-        .getOrElseUpdate(t, mutable.Set.empty[ActorRef])
-        .+=(sinkActor)
+        .getOrElseUpdate(t, mutable.Set.empty)
+        .+=(queue)
 
-      Sink.actorRef[Seq[Element]](sinkActor, SinkActor.Completed)
+      sink
     }
 
     def classSink(
-        implicit system: ActorSystem
+        implicit materializer: Materializer
     ): Sink[Seq[String], NotUsed] = {
-      val props = SinkActor.props[Seq[String]] { classes =>
-        classes.foreach(t.classList.add)
-        t.classList
-          .filterNot(classes contains _)
-          .foreach(t.classList remove _)
+      val (sink, queue) = MergeHub
+        .source[Seq[String]]
+        .toMat(Sink.queue[Seq[String]])(Keep.both)
+        .run()
+
+      def pull(): Unit = {
+        queue.pull().foreach {
+          case Some(classes) =>
+            classes.foreach(t.classList.add)
+            t.classList
+              .filterNot(classes contains _)
+              .foreach(t.classList remove _)
+            pull()
+          case None =>
+            println("You should not come here.")
+        }
       }
-      val sinkActor = system.actorOf(props)
+      pull()
 
       t.classList.add("akka-ui-binded")
 
       sinkBindings
-        .getOrElseUpdate(t, mutable.Set.empty[ActorRef])
-        .+=(sinkActor)
+        .getOrElseUpdate(t, mutable.Set.empty)
+        .+=(queue)
 
-      Sink.actorRef[Seq[String]](sinkActor, SinkActor.Completed)
+      sink
     }
 
-    def dummySink[V: ClassTag](
-        implicit system: ActorSystem
+    def dummySink[V](
+        implicit materializer: Materializer
     ): Sink[V, NotUsed] = {
-      val sinkActor = system.actorOf(SinkActor.props[V](_ => {}))
+      val (sink, queue) = MergeHub
+        .source[V]
+        .toMat(Sink.queue[V])(Keep.both)
+        .run()
+
+      def pull(): Unit = {
+        queue.pull().foreach {
+          case Some(v) =>
+            //do nothing
+            pull()
+          case None =>
+            println("You should not come here.")
+        }
+      }
+      pull()
 
       t.classList.add("akka-ui-binded")
 
       sinkBindings
-        .getOrElseUpdate(t, mutable.Set.empty[ActorRef])
-        .+=(sinkActor)
+        .getOrElseUpdate(t, mutable.Set.empty)
+        .+=(queue)
 
-      Sink.actorRef[V](sinkActor, SinkActor.Completed)
+      sink
     }
   }
 }
