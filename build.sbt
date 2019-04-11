@@ -1,6 +1,6 @@
 name := "akka-ui"
 
-version := "0.4.3-SNAPSHOT"
+version := "0.4.3"
 
 scalaVersion := "2.12.6"
 

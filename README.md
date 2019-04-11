@@ -27,7 +27,7 @@ document.querySelector("#root").appendChild(root.render)
 ### Installation
 
 ``` scala
-libraryDependencies += "net.pishen" %%% "akka-ui" % "0.4.2"
+libraryDependencies += "net.pishen" %%% "akka-ui" % "0.4.3"
 ```
 
 AkkaUI is built on top of [Scala.js](https://www.scala-js.org/), [Akka.js](https://github.com/akka-js/akka.js), and [scala-js-dom](https://github.com/scala-js/scala-js-dom).
@@ -171,7 +171,7 @@ In AkkaUI, when you create a `Source` or `Sink` from an `Element`, we will keep 
 
 ### Dynamic Stream Handling
 
-In some use cases, we may have to reference back to a `Source` that's not yet materialized, or merge more `Source` into an already materialized stream. In these cases, one can use Akka's `MergeHub` to achieve the task. Following is another Todo-list example which add a "Remove" button after each Todo item, and cycle the "Remove" signal back to list's source:
+In some use cases, we may have to reference back to a `Source` that's not yet materialized, or merge more `Source` into an already materialized stream. In these cases, one can use Akka's `MergeHub` and `BroadcastHub` to achieve the task. Following is another Todo-list example which add a "Remove" button after each Todo item, and cycle the "Remove" signal back to list's source:
 
 ``` scala
 val contentInput = input().render
@@ -181,7 +181,8 @@ val todoList = div().render
 val (removeSink, removeSource) = MergeHub.source[String]
   .map("remove" -> _)
   .alsoTo(todoList.dummySink) // prevent memory leak
-  .preMaterialize // get the removeSink for later use
+  .toMat(BroadcastHub.sink[(String, String)])(Keep.both)
+  .run()
 
 def todoItem(content: String) = {
   val checkbox = input(`type` := "checkbox").render
@@ -218,6 +219,6 @@ val root = div(contentInput, addBtn, todoList)
 document.querySelector("#root").appendChild(root.render)
 ```
 
-Starting from a source that will merge the "add" and "remove" signal, we eventually convert each signal into several Todo items, where each Todo item will contain a Remove button which sends its "remove" signal (onclick) back to the starting source. To achieve this, we use `MergeHub` and `preMaterialize` to get the `Sink` that can consume signals from the Remove button(s).
+Starting from a source that will merge the "add" and "remove" signal, we eventually convert each signal into several Todo items, where each Todo item will contain a Remove button which sends its "remove" signal (onclick) back to the starting source. To achieve this, we use `MergeHub` and `BroadcastHub` to get the `Sink` that can consume signals from the Remove button(s) and the `Source` which can be connected to `todoList`'s `childrenSink`.
 
-Notice that when we call `preMaterialize`, an unhandled stream will be created, which we have to terminate by ourselves to prevent memory leak. Here we use a trick that add one more `Sink` to the `Source` before we `preMaterialize` it, which is the `dummySink` on `todoList`, this `Sink` will consume and ignore all the signals sending to it, and will cancel the stream when its binding DOM element is removed. When the stream is canceled, the preMaterialized `MergeHub` will be terminated as well, hence preventing the memory leak. We can use this technique to connect the unhandled materialzed stream to a DOM element which has the same life-cycle as the stream.
+Notice that when we call `run()`, an unhandled stream will be materialized, which we have to terminate by ourselves to prevent memory leak. Here we use a trick that add one more `Sink` to the `Source` before we materialize it, which is the `dummySink` on `todoList`, this `Sink` will consume and ignore all the signals sending to it, and will cancel the stream when its binding DOM element is removed. When the stream is canceled, the materialized `MergeHub` and `BroadcastHub` will be terminated as well, hence preventing the memory leak. We can use this technique to connect the unhandled materialized stream to a DOM element which has the same life-cycle as the stream.
