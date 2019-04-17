@@ -14,9 +14,6 @@ package object ui {
   implicit class RichDOMTokenList(tokens: DOMTokenList)
       extends EasySeq[String](tokens.length, tokens.apply)
 
-  val sourceBindings0 = mutable.Map
-    .empty[EventTarget, mutable.Set[SourceQueueWithComplete[_ <: Event]]]
-
   val preventDefault = SourceBuilder.Config("preventDefault")
   val stopPropagation = SourceBuilder.Config("stopPropagation")
 
