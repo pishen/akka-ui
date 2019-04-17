@@ -76,14 +76,17 @@ package object ui {
               .dropRight(children.size)
               .foreach { child =>
                 // remove the bindings
-                (child +: child.querySelectorAll(".akka-ui-binded"))
+                (child +: child.querySelectorAll("*"))
                   .foreach { node =>
-                    sourceBindings0
+                    SourceBuilder.sourceBindings
                       .get(node)
-                      .foreach { queues =>
-                        queues.foreach(_.complete())
+                      .foreach { eventMap =>
+                        eventMap.values.foreach { res =>
+                          println("remove source binding")
+                          res._1.complete()
+                        }
+                        SourceBuilder.sourceBindings -= node
                       }
-                    sourceBindings0 -= node
                     sinkBindings
                       .get(node)
                       .foreach { queues =>
