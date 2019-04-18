@@ -67,11 +67,11 @@ object SourceBuilder {
     val listenerTerm = TermName(listenerName)
 
     val E = {
-      val listener = implicitly[WeakTypeTag[T]].tpe.member(listenerTerm)
+      val listener = weakTypeOf[T].member(listenerTerm)
       if (listener.fullName == "<none>") {
         c.abort(
           c.enclosingPosition,
-          s"Couldn't find $listenerName listener on target element."
+          s"Couldn't find $listenerName listener on ${weakTypeOf[T]}."
         )
       } else {
         listener.typeSignature.resultType.typeArgs.head
