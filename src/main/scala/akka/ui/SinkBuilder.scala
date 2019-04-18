@@ -137,9 +137,6 @@ object SinkBuilder {
       //appendChild can relocate the elements which already exist
       children.foreach(child => parent.appendChild(child))
       //remove the remaining children
-      def traverse(elem: Element): Seq[Element] = {
-        elem.children.flatMap(traverse)
-      }
       parent.children
         .dropRight(children.size)
         .foreach { child =>
